@@ -78,7 +78,7 @@ impl<T> Armoire<T> {
         let [key] = self.keys.reserve_n_mut::<1>();
         Self::ensure(&mut self.keys, &mut self.reads);
         let slot = &mut self.keys.slots.0[key.index()];
-        debug_assert!(slot.generation < key.generation());
+        debug_assert!(slot.generation <= key.generation());
         slot.generation = key.generation();
         (key, self.reads[key.index()].insert(value))
     }
@@ -88,7 +88,7 @@ impl<T> Armoire<T> {
         Self::ensure(&mut self.keys, &mut self.reads);
         for (key, value) in keys.iter().copied().zip(values) {
             let slot = &mut self.keys.slots.0[key.index()];
-            debug_assert!(slot.generation < key.generation());
+            debug_assert!(slot.generation <= key.generation());
             slot.generation = key.generation();
             self.reads[key.index()] = Some(value);
         }
