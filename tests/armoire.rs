@@ -52,3 +52,24 @@ fn iter_mut_has_inserted_key_value() -> Result {
     })?;
     Ok(())
 }
+
+#[test]
+fn scope_writes_twice() {
+    let mut armoire = Armoire::new();
+    let (key, _) = armoire.insert(1u8);
+    armoire.scope(|mut write, _, _| {
+        *write.get_mut(key)? += 1;
+        assert_eq!(*write.get_mut(key)?, 2);
+        Some(())
+    });
+}
+
+fn model() {
+    enum Action {
+        Insert(usize, bool),
+        Remove(usize, bool),
+        Clear,
+        Drain,
+        Resolve,
+    }
+}

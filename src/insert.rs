@@ -22,10 +22,9 @@ impl<'a, P: Iterator<Item = (Key, T)>, T> Inserts<'a, P, T> {
     }
 
     fn insert(&mut self, key: Key, value: T) -> Result<(), T> {
-        let index = key.index();
-        match (self.keys.slots.0.get_mut(index), self.reads.get_mut(index)) {
+        match (self.keys.get_mut(key), self.reads.get_mut(key.index())) {
             (Some(slot), Some(read @ None)) => {
-                slot.generation = key.generation();
+                slot.set(key.generation());
                 *read = Some(value);
                 Ok(())
             }

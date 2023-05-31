@@ -9,31 +9,27 @@ impl<'a, T> Read<'a, T> {
     }
 
     pub fn get(&self, key: Key) -> Option<&T> {
-        let index = key.index();
-        let slot = self.0.slots.0.get(index)?;
-        if slot.generation == key.generation() {
-            self.1.get(index)?.as_ref()
+        if self.0.valid(key) {
+            self.1.get(key.index())?.as_ref()
         } else {
             None
         }
     }
 
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (Key, &T)> {
-        self.1.iter().enumerate().filter_map(|(i, read)| {
-            let value = read.as_ref()?;
-            let key = Key::new(self.0.slots.0.get(i)?.generation, i as _);
-            Some((key, value))
-        })
+        self.1
+            .iter()
+            .enumerate()
+            .filter_map(|(i, read)| Some((self.0.key(i)?, read.as_ref()?)))
     }
 }
 
 impl<T: Sync> Read<'_, T> {
     pub fn par_iter(&self) -> impl ParallelIterator<Item = (Key, &T)> {
-        self.1.par_iter().enumerate().filter_map(|(i, read)| {
-            let value = read.as_ref()?;
-            let key = Key::new(self.0.slots.0.get(i)?.generation, i as _);
-            Some((key, value))
-        })
+        self.1
+            .par_iter()
+            .enumerate()
+            .filter_map(|(i, read)| Some((self.0.key(i)?, read.as_ref()?)))
     }
 }
 

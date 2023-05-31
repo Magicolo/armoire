@@ -26,12 +26,11 @@ impl<'a, K: Iterator<Item = Key>, T> Removes<'a, K, T> {
     }
 
     fn remove(&mut self, key: Key) -> Result<(Key, T), Key> {
-        let index = key.index();
-        if let Some(slot) = self.keys.slots.0.get_mut(index) {
-            if slot.generation == key.generation() {
-                if let Some(read) = self.reads.get_mut(index) {
+        if let Some(slot) = self.keys.get_mut(key) {
+            if slot.is(key.generation()) {
+                if let Some(read) = self.reads.get_mut(key.index()) {
                     if let Some(value) = read.take() {
-                        if let Some(write @ Some(_)) = self.writes.get_mut(index) {
+                        if let Some(write @ Some(_)) = self.writes.get_mut(key.index()) {
                             *write = None;
                         }
                         if let Some(key) = key.increment() {

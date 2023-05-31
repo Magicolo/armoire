@@ -10,11 +10,7 @@ pub use key::Key;
 pub use read::Read;
 pub use write::Write;
 
-use crate::{
-    insert::Inserts,
-    key::{Keys, Slot},
-    remove::Removes,
-};
+use crate::{insert::Inserts, key::Keys, remove::Removes};
 use parking_lot::Mutex;
 use rayon::prelude::*;
 use std::{collections::HashSet, mem::swap};
@@ -55,20 +51,16 @@ impl<T> Armoire<T> {
     }
 
     pub fn get(&self, key: Key) -> Option<&T> {
-        let index = key.index();
-        let slot = self.keys.slots.0.get(index)?;
-        if slot.generation == key.generation() {
-            self.reads[index].as_ref()
+        if self.keys.valid(key) {
+            self.reads[key.index()].as_ref()
         } else {
             None
         }
     }
 
     pub fn get_mut(&mut self, key: Key) -> Option<&mut T> {
-        let index = key.index();
-        let slot = self.keys.slots.0.get(index)?;
-        if slot.generation == key.generation() {
-            self.reads[index].as_mut()
+        if self.keys.valid(key) {
+            self.reads[key.index()].as_mut()
         } else {
             None
         }
@@ -77,9 +69,7 @@ impl<T> Armoire<T> {
     pub fn insert(&mut self, value: T) -> (Key, &mut T) {
         let [key] = self.keys.reserve_n_mut::<1>();
         Self::ensure(&mut self.keys, &mut self.reads);
-        let slot = &mut self.keys.slots.0[key.index()];
-        debug_assert!(slot.generation <= key.generation());
-        slot.generation = key.generation();
+        self.keys.set(key);
         (key, self.reads[key.index()].insert(value))
     }
 
@@ -87,9 +77,7 @@ impl<T> Armoire<T> {
         let keys = self.keys.reserve_n_mut::<N>();
         Self::ensure(&mut self.keys, &mut self.reads);
         for (key, value) in keys.iter().copied().zip(values) {
-            let slot = &mut self.keys.slots.0[key.index()];
-            debug_assert!(slot.generation <= key.generation());
-            slot.generation = key.generation();
+            self.keys.set(key);
             self.reads[key.index()] = Some(value);
         }
         keys
@@ -112,21 +100,17 @@ impl<T> Armoire<T> {
     }
 
     pub fn iter(&self) -> impl DoubleEndedIterator<Item = (Key, &T)> {
-        self.reads.iter().enumerate().filter_map(|(i, read)| {
-            let read = read.as_ref()?;
-            let slot = &self.keys.slots.0[i];
-            let key = Key::new(slot.generation, i as _);
-            Some((key, read))
-        })
+        self.reads
+            .iter()
+            .enumerate()
+            .filter_map(|(i, read)| Some((self.keys.key(i)?, read.as_ref()?)))
     }
 
     pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = (Key, &mut T)> {
-        self.reads.iter_mut().enumerate().filter_map(|(i, read)| {
-            let read = read.as_mut()?;
-            let slot = &self.keys.slots.0[i];
-            let key = Key::new(slot.generation, i as _);
-            Some((key, read))
-        })
+        self.reads
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, read)| Some((self.keys.key(i)?, read.as_mut()?)))
     }
 
     pub fn scope<U>(&mut self, scope: impl FnOnce(Write<T>, Read<T>, Defer<T>) -> U) -> U {
@@ -151,9 +135,7 @@ impl<T> Armoire<T> {
     }
 
     pub(crate) fn ensure(keys: &mut Keys, reads: &mut Vec<Option<T>>) {
-        let capacity = *keys.slots.1.get_mut() as usize;
-        keys.slots.0.resize_with(capacity, Slot::default);
-        reads.resize_with(capacity, || None);
+        reads.resize_with(keys.ensure(), || None);
     }
 
     fn resolve_defer(
@@ -170,24 +152,17 @@ impl<T> Armoire<T> {
 
 impl<T: Send + Sync> Armoire<T> {
     pub fn par_iter(&self) -> impl ParallelIterator<Item = (Key, &T)> {
-        self.reads.par_iter().enumerate().filter_map(|(i, read)| {
-            let read = read.as_ref()?;
-            let slot = &self.keys.slots.0[i];
-            let key = Key::new(slot.generation, i as _);
-            Some((key, read))
-        })
+        self.reads
+            .par_iter()
+            .enumerate()
+            .filter_map(|(i, read)| Some((self.keys.key(i)?, read.as_ref()?)))
     }
 
     pub fn par_iter_mut(&mut self) -> impl ParallelIterator<Item = (Key, &mut T)> {
         self.reads
             .par_iter_mut()
             .enumerate()
-            .filter_map(|(i, read)| {
-                let read = read.as_mut()?;
-                let slot = &self.keys.slots.0[i];
-                let key = Key::new(slot.generation, i as _);
-                Some((key, read))
-            })
+            .filter_map(|(i, read)| Some((self.keys.key(i)?, read.as_mut()?)))
     }
 }
 

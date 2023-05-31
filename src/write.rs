@@ -48,16 +48,14 @@ impl<'a, T> Write<'a, T> {
 
 impl<T: Clone> Write<'_, T> {
     pub fn get_mut(&mut self, key: Key) -> Option<&mut T> {
-        self.partial();
-        todo!();
-        None
-        // let index = key.index as usize;
-        // let slot = self.0.slots.0.get(index)?;
-        // if slot.generation == key.generation {
-        //     self.1.get_mut(index)?.as_mut()
-        // } else {
-        //     None
-        // }
+        if self.0.valid(key) {
+            self.partial();
+            let read = self.2.get(key.index())?.as_ref()?;
+            let write = self.1.get_mut(key.index())?;
+            Some(write.insert(read.clone()))
+        } else {
+            None
+        }
     }
 
     pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = (Key, &mut T)> {

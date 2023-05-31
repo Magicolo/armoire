@@ -1,4 +1,7 @@
-use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
+use std::{
+    mem::replace,
+    sync::atomic::{AtomicI64, AtomicU32, Ordering},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Key {
@@ -7,26 +10,29 @@ pub struct Key {
 }
 
 pub(crate) struct Keys {
-    pub slots: (Vec<Slot>, AtomicU32),
+    slots: (Vec<Slot>, AtomicU32),
     pub free: (Vec<Key>, AtomicI64),
 }
 
 #[derive(Default)]
 pub(crate) struct Slot {
-    pub generation: u32,
+    generation: u32,
 }
 
 impl Key {
     pub(crate) const ZERO: Key = Key::new(0, 0);
 
+    #[inline]
     pub(crate) const fn new(generation: u32, index: u32) -> Self {
         Self { generation, index }
     }
 
+    #[inline]
     pub(crate) const fn index(&self) -> usize {
         self.index as _
     }
 
+    #[inline]
     pub(crate) const fn generation(&self) -> u32 {
         self.generation
     }
@@ -37,12 +43,55 @@ impl Key {
     }
 }
 
+impl Slot {
+    #[inline]
+    pub(crate) const fn key(&self, index: u32) -> Key {
+        Key::new(self.generation, index)
+    }
+
+    #[inline]
+    pub(crate) const fn is(&self, generation: u32) -> bool {
+        self.generation == generation
+    }
+
+    #[inline]
+    pub(crate) fn set(&mut self, generation: u32) -> u32 {
+        replace(&mut self.generation, generation)
+    }
+}
+
 impl Keys {
+    #[inline]
     pub const fn new() -> Self {
         Self {
             slots: (Vec::new(), AtomicU32::new(0)),
             free: (Vec::new(), AtomicI64::new(0)),
         }
+    }
+
+    #[inline]
+    pub fn key(&self, index: usize) -> Option<Key> {
+        Some(self.slots.0.get(index)?.key(index as _))
+    }
+
+    #[inline]
+    pub fn valid(&self, key: Key) -> bool {
+        matches!(self.get(key), Some(slot) if slot.is(key.generation()))
+    }
+
+    #[inline]
+    pub fn set(&mut self, key: Key) -> Option<u32> {
+        Some(self.get_mut(key)?.set(key.generation()))
+    }
+
+    #[inline]
+    pub fn get(&self, key: Key) -> Option<&Slot> {
+        self.slots.0.get(key.index())
+    }
+
+    #[inline]
+    pub fn get_mut(&mut self, key: Key) -> Option<&mut Slot> {
+        self.slots.0.get_mut(key.index())
     }
 
     pub fn reserve(&self, keys: &mut [Key]) {
@@ -96,5 +145,11 @@ impl Keys {
         let mut keys = [Key::ZERO; N];
         self.reserve_mut(&mut keys);
         keys
+    }
+
+    pub fn ensure(&mut self) -> usize {
+        let capacity = *self.slots.1.get_mut() as usize;
+        self.slots.0.resize_with(capacity, Slot::default);
+        capacity
     }
 }
