@@ -21,12 +21,7 @@ pub struct Armoire<T> {
     writes: Vec<Option<T>>,
     inserts: Mutex<Vec<(Key, T)>>,
     removes: Mutex<HashSet<Key>>,
-}
-
-enum Clones {
-    None,
-    Partial,
-    Full,
+    indices: HashSet<usize>,
 }
 
 impl<T> Armoire<T> {
@@ -37,6 +32,7 @@ impl<T> Armoire<T> {
             writes: Vec::new(),
             inserts: Mutex::new(Vec::new()),
             removes: Mutex::new(HashSet::new()),
+            indices: HashSet::new(),
         }
     }
 }
@@ -114,15 +110,17 @@ impl<T> Armoire<T> {
     }
 
     pub fn scope<U>(&mut self, scope: impl FnOnce(Write<T>, Read<T>, Defer<T>) -> U) -> U {
-        let mut clones = Clones::None;
-        let writes = Write::new(&self.keys, &mut self.writes, &self.reads, &mut clones);
+        let writes = Write::new(&self.keys, &mut self.writes, &self.reads, &mut self.indices);
         let reads = Read::new(&self.keys, &self.reads);
         let defer = Defer::new(&self.keys, &self.inserts, &self.removes);
         let value = scope(writes, reads, defer);
-        match clones {
-            Clones::None => {}
-            Clones::Partial => todo!(),
-            Clones::Full => swap(&mut self.reads, &mut self.writes),
+        if self.indices.len() == self.len() {
+            swap(&mut self.reads, &mut self.writes);
+            self.indices.clear();
+        } else {
+            for index in self.indices.drain() {
+                self.reads[index] = self.writes[index].take();
+            }
         }
         Self::resolve_defer(
             &mut self.keys,
