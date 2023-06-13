@@ -154,6 +154,17 @@ impl<T> Pairs<'_, T> {
     }
 
     #[inline]
+    pub fn fork<'a, L: Item, R: Item>(
+        &'a mut self,
+        fork: impl Fn(Key, &'a mut T) -> (L, R) + Copy,
+    ) -> (
+        Fork<'a, Pair<T>, impl Fn(&'a mut Pair<T>) -> L>,
+        Fork<'a, Pair<T>, impl Fn(&'a mut Pair<T>) -> R>,
+    ) {
+        fork::fork(self.pairs, move |pair| fork(pair.0, &mut pair.1))
+    }
+
+    #[inline]
     pub fn get_mut(&mut self, key: Key) -> Option<&mut T> {
         let index = index(key, self.slots)?;
         Some(&mut self.pairs[index].1)
