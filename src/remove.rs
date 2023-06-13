@@ -4,16 +4,16 @@ use std::iter::FusedIterator;
 pub struct Removes<'a, K: Iterator<Item = Key>, T> {
     removes: K,
     keys: &'a mut Keys,
-    reads: &'a mut [Option<T>],
-    writes: &'a mut [Option<T>],
+    reads: &'a mut Vec<(Key, T)>,
+    writes: &'a mut Vec<Option<T>>,
 }
 
 impl<'a, K: Iterator<Item = Key>, T> Removes<'a, K, T> {
     pub(crate) fn new(
         removes: K,
         keys: &'a mut Keys,
-        reads: &'a mut [Option<T>],
-        writes: &'a mut [Option<T>],
+        reads: &'a mut Vec<(Key, T)>,
+        writes: &'a mut Vec<Option<T>>,
     ) -> Self {
         let count = *keys.free.1.get_mut();
         keys.free.0.truncate(count.max(0) as _);
@@ -28,17 +28,20 @@ impl<'a, K: Iterator<Item = Key>, T> Removes<'a, K, T> {
     fn remove(&mut self, key: Key) -> Result<(Key, T), Key> {
         if let Some(slot) = self.keys.get_mut(key) {
             if slot.is(key.generation()) {
-                if let Some(read) = self.reads.get_mut(key.index()) {
-                    if let Some(value) = read.take() {
-                        if let Some(write @ Some(_)) = self.writes.get_mut(key.index()) {
-                            *write = None;
-                        }
-                        if let Some(key) = key.increment() {
-                            self.keys.free.0.push(key);
-                        }
-                        return Ok((key, value));
+                let row = slot.row();
+                let pair = self.reads.swap_remove(row as _);
+                if (row as usize) < self.writes.len() {
+                    self.writes.swap_remove(row as _);
+                }
+                if let Some(&(key, _)) = self.reads.get(row as usize) {
+                    if let Some(slot) = self.keys.get_mut(key) {
+                        slot.update(row);
                     }
                 }
+                if let Some(key) = key.increment() {
+                    self.keys.free.0.push(key);
+                }
+                return Ok(pair);
             }
         }
         Err(key)

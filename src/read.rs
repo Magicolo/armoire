@@ -1,35 +1,30 @@
-use crate::key::{Key, Keys};
+use crate::{
+    key::{Key, Keys},
+    utility::FullIterator,
+};
 use rayon::prelude::*;
 
-pub struct Read<'a, T>(&'a Keys, &'a [Option<T>]);
+pub struct Read<'a, T>(&'a Keys, &'a [(Key, T)]);
 
 impl<'a, T> Read<'a, T> {
-    pub(crate) const fn new(keys: &'a Keys, reads: &'a [Option<T>]) -> Self {
+    pub(crate) const fn new(keys: &'a Keys, reads: &'a [(Key, T)]) -> Self {
         Self(keys, reads)
     }
 
     pub fn get(&self, key: Key) -> Option<&T> {
-        if self.0.valid(key) {
-            self.1.get(key.index())?.as_ref()
-        } else {
-            None
-        }
+        let row = self.0.row(key)?;
+        let (_, value) = self.1.get(row as usize)?;
+        Some(value)
     }
 
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (Key, &T)> {
-        self.1
-            .iter()
-            .enumerate()
-            .filter_map(|(i, read)| Some((self.0.key(i)?, read.as_ref()?)))
+    pub fn iter(&self) -> impl FullIterator<Item = (Key, &T)> {
+        self.1.iter().map(|(key, value)| (*key, value))
     }
 }
 
 impl<T: Sync> Read<'_, T> {
-    pub fn par_iter(&self) -> impl ParallelIterator<Item = (Key, &T)> {
-        self.1
-            .par_iter()
-            .enumerate()
-            .filter_map(|(i, read)| Some((self.0.key(i)?, read.as_ref()?)))
+    pub fn par_iter(&self) -> impl IndexedParallelIterator<Item = (Key, &T)> {
+        self.1.par_iter().map(|(key, value)| (*key, value))
     }
 }
 

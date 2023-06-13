@@ -7,11 +7,9 @@ const COUNT: usize = 1024;
 
 #[test]
 fn get_inserted_value_by_key() -> Result {
-    char::generator().check(COUNT, |&(mut value)| {
+    char::generator().check(COUNT, |&value| {
         let mut armoire = Armoire::new();
-        let pair = armoire.insert(value);
-        prove!(pair.1 == &mut value)?;
-        let (key, _) = pair;
+        let key = armoire.insert(value);
         prove!(armoire.get(key) == Some(&value))
     })?;
     Ok(())
@@ -21,9 +19,7 @@ fn get_inserted_value_by_key() -> Result {
 fn get_mut_inserted_value_by_key() -> Result {
     isize::generator().check(COUNT, |&(mut value)| {
         let mut armoire = Armoire::new();
-        let pair = armoire.insert(value);
-        prove!(pair.1 == &mut value)?;
-        let (key, _) = pair;
+        let key = armoire.insert(value);
         prove!(armoire.get_mut(key) == Some(&mut value))
     })?;
     Ok(())
@@ -33,7 +29,7 @@ fn get_mut_inserted_value_by_key() -> Result {
 fn iter_has_inserted_key_value() -> Result {
     u32::generator().check(COUNT, |&value| {
         let mut armoire = Armoire::new();
-        let (key, _) = armoire.insert(value);
+        let key = armoire.insert(value);
         let pairs = armoire.iter().collect::<Vec<_>>();
         prove!(pairs.len() == 1)?;
         prove!(pairs.get(0) == Some(&(key, &value)))
@@ -45,7 +41,7 @@ fn iter_has_inserted_key_value() -> Result {
 fn iter_mut_has_inserted_key_value() -> Result {
     bool::generator().check(COUNT, |&(mut value)| {
         let mut armoire = Armoire::new();
-        let (key, _) = armoire.insert(value);
+        let key = armoire.insert(value);
         let pairs = armoire.iter_mut().collect::<Vec<_>>();
         prove!(pairs.len() == 1)?;
         prove!(pairs.get(0) == Some(&(key, &mut value)))
@@ -53,23 +49,23 @@ fn iter_mut_has_inserted_key_value() -> Result {
     Ok(())
 }
 
-#[test]
-fn scope_writes_twice() {
-    let mut armoire = Armoire::new();
-    let (key, _) = armoire.insert(1u8);
-    armoire.scope(|mut write, _, _| {
-        *write.get_mut(key)? += 1;
-        assert_eq!(*write.get_mut(key)?, 2);
-        Some(())
-    });
+// #[test]
+// fn scope_writes_twice() {
+//     let mut armoire = Armoire::new();
+//     let key = armoire.insert(1u8);
+//     armoire.scope(|mut write, _, _| {
+//         *write.get_mut(key)? += 1;
+//         assert_eq!(*write.get_mut(key)?, 2);
+//         Some(())
+//     });
+// }
+
+pub enum Action {
+    Insert(usize, bool),
+    Remove(usize, bool),
+    Clear,
+    Drain,
+    Resolve,
 }
 
-fn model() {
-    enum Action {
-        Insert(usize, bool),
-        Remove(usize, bool),
-        Clear,
-        Drain,
-        Resolve,
-    }
-}
+pub fn model() {}

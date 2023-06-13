@@ -1,19 +1,16 @@
 use std::iter::FusedIterator;
 
-use crate::{
-    key::{Key, Keys},
-    Armoire,
-};
+use crate::key::{Key, Keys};
 
 pub struct Inserts<'a, P: Iterator<Item = (Key, T)>, T> {
     inserts: P,
     keys: &'a mut Keys,
-    reads: &'a mut [Option<T>],
+    reads: &'a mut Vec<(Key, T)>,
 }
 
 impl<'a, P: Iterator<Item = (Key, T)>, T> Inserts<'a, P, T> {
-    pub(crate) fn new(inserts: P, keys: &'a mut Keys, reads: &'a mut Vec<Option<T>>) -> Self {
-        Armoire::ensure(keys, reads);
+    pub(crate) fn new(inserts: P, keys: &'a mut Keys, reads: &'a mut Vec<(Key, T)>) -> Self {
+        keys.ensure();
         Self {
             inserts,
             keys,
@@ -22,13 +19,12 @@ impl<'a, P: Iterator<Item = (Key, T)>, T> Inserts<'a, P, T> {
     }
 
     fn insert(&mut self, key: Key, value: T) -> Result<(), T> {
-        match (self.keys.get_mut(key), self.reads.get_mut(key.index())) {
-            (Some(slot), Some(read @ None)) => {
-                slot.set(key.generation());
-                *read = Some(value);
-                Ok(())
-            }
-            _ => Err(value),
+        if let Some(slot) = self.keys.get_mut(key) {
+            slot.initialize(key.generation(), self.reads.len() as _);
+            self.reads.push((key, value));
+            Ok(())
+        } else {
+            Err(value)
         }
     }
 }

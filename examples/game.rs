@@ -2,6 +2,7 @@ use armoire::*;
 use rayon::prelude::*;
 use std::{
     mem::replace,
+    sync::atomic::AtomicUsize,
     time::{Duration, Instant},
 };
 
@@ -10,6 +11,12 @@ pub struct Player {
     pub position: [f64; 2],
     pub velocity: [f64; 2],
     pub target: Option<Key>,
+}
+
+pub struct Pliyer {
+    pub position: [f64; 2],
+    pub velocity: [f64; 2],
+    pub target: AtomicUsize,
 }
 
 #[derive(Clone)]
@@ -36,7 +43,7 @@ pub struct Resources {
 pub struct Context<'a> {
     pub key: Key,
     pub resources: &'a Resources,
-    pub entities: Read<'a, Entity>,
+    pub entities: Pairs<'a, Entity>,
     pub defer: Defer<'a, Entity>,
 }
 
@@ -74,9 +81,7 @@ impl Player {
         self.position[1] += self.velocity[1] * time.delta.as_secs_f64();
 
         let target_pair = entities.iter().min_by_key(|(_, target)| match target {
-            Entity::Enemy(enemy) => {
-                Some((distance(self.position, enemy.position) * 1_000_000.0) as u64)
-            }
+            Entity::Enemy(enemy) => Some(distance(self.position, enemy.position)),
             _ => None,
         });
 
@@ -108,13 +113,13 @@ impl Time {
 }
 
 fn main() {
-    let mut armoire = Armoire::new();
-    armoire.insert(Entity::Player(Player {
+    let mut entities = Armoire::new();
+    entities.insert(Entity::Player(Player {
         position: [0.0; 2],
         velocity: [1.0; 2],
         target: None,
     }));
-    armoire.insert(Entity::Enemy(Enemy {
+    entities.insert(Entity::Enemy(Enemy {
         position: [0.0; 2],
         velocity: [1.0; 2],
     }));
@@ -125,27 +130,50 @@ fn main() {
             delta: Duration::ZERO,
         },
     };
+
+    for _ in 0..10 {
+        let (mut players, targets) = entities.fork(|key, entity| match entity {
+            Entity::Player(player) => (
+                Some((key, &mut player.target, &player.position)),
+                (key, &player.position),
+            ),
+            Entity::Enemy(enemy) => (None, (key, &enemy.position)),
+        });
+        players.par_iter_mut().for_each(|player| {
+            if let Some((key, target, position)) = player {
+                let near = targets
+                    .par_iter()
+                    .filter(|pair| pair.0 != key)
+                    .min_by_key(|pair| distance(*position, *pair.1));
+                if let Some(near) = near {
+                    *target = Some(near.0);
+                }
+            }
+        });
+    }
+
     let mut then = Instant::now();
-    while armoire
+    while entities
         .par_iter()
         .any(|(_, entity)| matches!(entity, Entity::Player(_)))
     {
         resources.time.step(Instant::now(), &mut then);
-        armoire.scope(|mut write, read, defer| {
-            write.par_iter_mut().for_each(|(key, entity)| {
-                entity.step(Context {
-                    key,
-                    resources: &resources,
-                    entities: read,
-                    defer,
-                })
-            });
-        });
+        // entities.scope(|mut entities, defer| {
+        //     entities.par_iter_mut().for_each(|(key, entity)| {
+        //         entity.step(Context {
+        //             key,
+        //             resources: &resources,
+        //             entities,
+        //             defer,
+        //         })
+        //     });
+        // });
     }
 }
 
-fn distance(left: [f64; 2], right: [f64; 2]) -> f64 {
+fn distance(left: [f64; 2], right: [f64; 2]) -> u64 {
     let x = left[0] + right[0];
     let y = left[1] + right[1];
-    (x * x + y * y).sqrt()
+    let distance = (x * x + y * y).sqrt();
+    (distance * 1_000_000.0) as u64
 }

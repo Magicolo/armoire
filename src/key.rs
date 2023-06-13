@@ -1,7 +1,4 @@
-use std::{
-    mem::replace,
-    sync::atomic::{AtomicI64, AtomicU32, Ordering},
-};
+use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Key {
@@ -17,23 +14,24 @@ pub(crate) struct Keys {
 #[derive(Default)]
 pub(crate) struct Slot {
     generation: u32,
+    row: u32,
 }
 
 impl Key {
-    pub(crate) const ZERO: Key = Key::new(0, 0);
+    pub const ZERO: Key = Key::new(0, 0);
 
     #[inline]
-    pub(crate) const fn new(generation: u32, index: u32) -> Self {
+    pub const fn new(generation: u32, index: u32) -> Self {
         Self { generation, index }
     }
 
     #[inline]
-    pub(crate) const fn index(&self) -> usize {
-        self.index as _
+    pub const fn index(&self) -> u32 {
+        self.index
     }
 
     #[inline]
-    pub(crate) const fn generation(&self) -> u32 {
+    pub const fn generation(&self) -> u32 {
         self.generation
     }
 
@@ -45,18 +43,24 @@ impl Key {
 
 impl Slot {
     #[inline]
-    pub(crate) const fn key(&self, index: u32) -> Key {
-        Key::new(self.generation, index)
-    }
-
-    #[inline]
-    pub(crate) const fn is(&self, generation: u32) -> bool {
+    pub const fn is(&self, generation: u32) -> bool {
         self.generation == generation
     }
 
     #[inline]
-    pub(crate) fn set(&mut self, generation: u32) -> u32 {
-        replace(&mut self.generation, generation)
+    pub const fn row(&self) -> u32 {
+        self.row
+    }
+
+    #[inline]
+    pub fn initialize(&mut self, generation: u32, row: u32) {
+        self.generation = generation;
+        self.update(row);
+    }
+
+    #[inline]
+    pub fn update(&mut self, row: u32) {
+        self.row = row;
     }
 }
 
@@ -70,28 +74,33 @@ impl Keys {
     }
 
     #[inline]
-    pub fn key(&self, index: usize) -> Option<Key> {
-        Some(self.slots.0.get(index)?.key(index as _))
+    pub fn row(&self, key: Key) -> Option<u32> {
+        let slot = self.get(key)?;
+        if slot.is(key.generation()) {
+            Some(slot.row())
+        } else {
+            None
+        }
     }
 
     #[inline]
-    pub fn valid(&self, key: Key) -> bool {
-        matches!(self.get(key), Some(slot) if slot.is(key.generation()))
-    }
-
-    #[inline]
-    pub fn set(&mut self, key: Key) -> Option<u32> {
-        Some(self.get_mut(key)?.set(key.generation()))
+    pub fn initialize(&mut self, key: Key, row: u32) -> bool {
+        if let Some(slot) = self.get_mut(key) {
+            slot.initialize(key.generation(), row);
+            true
+        } else {
+            false
+        }
     }
 
     #[inline]
     pub fn get(&self, key: Key) -> Option<&Slot> {
-        self.slots.0.get(key.index())
+        self.slots.0.get(key.index() as usize)
     }
 
     #[inline]
     pub fn get_mut(&mut self, key: Key) -> Option<&mut Slot> {
-        self.slots.0.get_mut(key.index())
+        self.slots.0.get_mut(key.index() as usize)
     }
 
     pub fn reserve(&self, keys: &mut [Key]) {
@@ -108,7 +117,7 @@ impl Keys {
         if !keys.is_empty() {
             let index = self.slots.1.fetch_add(keys.len() as _, Ordering::Relaxed);
             for (i, key) in keys.iter_mut().enumerate() {
-                *key = Key::new(0, index.wrapping_add(i as _));
+                *key = Key::new(1, index.wrapping_add(i as _));
             }
         }
     }
@@ -136,7 +145,7 @@ impl Keys {
             let index = *capacity;
             *capacity = capacity.wrapping_add(keys.len() as _);
             for (i, key) in keys.iter_mut().enumerate() {
-                *key = Key::new(0, index.wrapping_add(i as _));
+                *key = Key::new(1, index.wrapping_add(i as _));
             }
         }
     }
