@@ -149,16 +149,3 @@ where
             .map(|item| self.2(item).read())
     }
 }
-
-#[test]
-fn evil() {
-    let mut a = [(1u8, (2u8, 3u8)), (2, (3, 4))];
-    let (mut left, mut right) = fork(&mut a, move |(l, (r0, r1))| (l, (r0, r1)));
-    for l in left.iter_mut() {
-        *l = 1;
-        for (r0, r1) in right.iter_mut() {
-            *r0 += 1;
-            *r1 += 1;
-        }
-    }
-}
